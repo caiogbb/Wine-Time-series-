@@ -1,2 +1,2 @@
-# Wine-Time-series-
-Aplicação de modelos de série temporais para previsão de Vinhos
+# Modelo de Séries Temporais para a previsão de vendas de vinho
+Neste projeto, foi-se utilizado modelos de séries temporais para realizar previsão de vendas de vinhos australianos. O conjunto de dados considerado é um conjunto de dados presente no pacote 'forecast' em linguagem R. Este projeto foi realizado em linguagem R, o documento foi construído em Rmarkdown. O projeto realizou previsão de anos seguintes considerando o modelo Arima, onde mostrou-se que para os meses restantes de 1994 e o ano de 1995, o período com maior venda foram nos meses do final do ano.  

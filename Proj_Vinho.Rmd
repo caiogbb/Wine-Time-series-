@@ -1,0 +1,262 @@
+---
+title: "Projeto de Séries Temporais"
+author: "Caio Gabriel Barreto Balieiro"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Modelo de Séries Temporais para vendas de vinhos
+
+#### Os dados descrevem as vendas totais de vinho australiano por vinicultores em garrafas <= 1 litro.
+
+#### Esta série temporal registra as vendas de vinho por vinicultores australianos entre janeiro de 1980 e agosto de 1994. Este conjunto de dados é encontrado no pacote de forecast do R (wineind).
+
+#### O objetivo deste projeto é:
+
+##### Estudar os componentes de tendência e sazonalidade (se houver) da série de vendas de vinho.
+
+##### Fazer a previsão de vendas de vinhos para o restante do ano de 1994 e 1995.
+
+```{r}
+# Pacotes utilizados
+
+# É importante destacar que para este projeto funcionar, há a necessidade de instalar os pacotes abaixo, utilizando o comando install.package('nome do pacote').
+
+library(forecast) # Fazer previsão
+library(MLmetrics) # Calcular a métrica MAPE
+library(knitr) # Farmatar tabela em formato Mardown
+
+# Carregado o conjunto de dados extraídos do pacote forecast
+
+data('wineind')
+
+wineind
+
+```
+
+Para realizar esse projeto, foi utilizado as principais bibliotecas de séries temporais da linguagem R sendo elas: forecast, MLmetrics. O pacote knitr é para visualização melhor dos dados em tabelas no formato Markdown. Os dados carregados são do pacote forecast, são dados de vendas totais de vinho por mês.
+
+
+
+```{r}
+# Gráfico da série temporal 
+ts.plot(wineind, xlab = 'Tempo', ylab = 'Vendas de vinho', main='Série de vinho' )
+
+```
+
+Pode-se notar pelo gráfico da série de vendas de vinho, que as vendas de vinhos totais tiveram um aumento no incio do acompanhamento de 1980 até próximo a 1990. Logo após isto tem uma leve queda de vendas. Entretanto no fim se estabiliza. Agora, vamos avaliar o gráfico de ACF que apresenta os principais componentes da série temporal.
+
+
+```{r}
+acf(wineind)
+```
+
+
+O acf da série de vendas indica que repetições de picos de autocorrelação altos nos lags multiplos de 6, isto da um indicativo de presença de componente sazonal na série, isto é, fatores climaticos e econômicos assim como de datas (tais como feriados e eventos importantes) estão influenciando para que ocorram um movimento de queda e aumento de vendas nos anos acompanhados na série, ou seja, um padrão de repetição onde as vendas totais caem e aumentam ao longo dos meses.
+
+```{r}
+# Decomposição da série temporal de vinho em tendencia, sazonalidade e ruido
+dec <- decompose(wineind)
+
+plot(dec)
+
+```
+
+O gráfico acima separa de maneira prática os componentes que compoem esta série temporal. Como observado anteriormente a parte de tendência da série apresenta um aumento nos anos iniciais e ao fim tem uma leve redução e se estabiliza. Você pode notar no componente de sazonalidade os movimentos de onda, característico de séries com componente sazonal (em breve será estudado com detalhes esse comportamento sazonal da série). 
+
+
+```{r}
+
+ vinho_saz <- wineind - dec$trend
+
+ monthplot(vinho_saz, ylab= "Efeito Sazonal", xlab="Mês", 
+          main ="Vendas de vinho")
+
+```
+
+Acima temos uma análise descritiva muito interessante estudando apenas o componente sazonal da série. Pode-se notar que as menores vendas (valores negativos do gráfico) dentre os anos de 1980 e 1994 são dos meses de Janeiro a Março, e, os maiores valores de vendas totais são registrados nos meses de novembro e dezembro. 
+
+
+```{r}
+# splitando os dados em treino e teste
+
+train <- wineind[1:150]
+test <- wineind[151:176]
+
+```
+
+Para a realização das análises dos modelos de séries temporais foi-se divido a base em treino e teste. Para teste foi escolhido utilizar 150 meses e para teste 26 meses.
+
+
+```{r}
+
+# Transformando os dados de train em objeto do tipo ts 
+
+tswineind<-ts(train, start=c(1980,1), frequency=12)
+
+# Utilizando a funçao auto.arima para identificar o 'melhor' modelo para a série temporal de vinhos 
+
+tswineindbest <- auto.arima(tswineind,approximation = FALSE)
+
+# Modelo escolhido ARIMA(0,1,1)(0,1,1)[12] 
+
+tswineindbest
+
+# Utitlizando o modelo de Espaço de Estados
+
+fit_BSM <- StructTS(tswineind, "BSM")
+fit_BSM$coef
+
+```
+
+Os modelos apresentados neste projeto e que iram compor a escolho dos modelos para a previsão da série temporal de vendas são: Arima e Modelo de Espaço de Estados. Para o modelo Arima foi utitlizado a função auto.arima() para a escolha do 'melhor' modelo (via AIC). Para o modelo de espaço de estados foi adotado o modelo que permite a inclusão de uma parte de tendência e sazonalidade. 
+
+```{r}
+# Análise de Resíduos do Modelo Arima
+
+res <- tswineindbest$residuals
+
+# Gráfico de ACF
+acf(tswineindbest$residuals, main = 'Autocorrelação', xlab = 'lag')
+
+# Calculando o gráfico de envelope para distribuição normal 
+
+n <- length(res)
+xb <- mean(res) # mu
+sx <- sd(res) # sigma
+
+## 2. Gráfico QQ com envelope
+nsim <- 100 # Número de simulações
+conf <- 0.95 # Coef. de confiança
+# Dados simulados ~ normal
+dadossim <- matrix(rnorm(n * nsim, mean = xb, sd = sx), nrow = n)
+dadossim <- apply(dadossim, 2, sort)
+# Limites da banda e média
+infsup <- apply(dadossim, 1, quantile, probs = c((1 - conf) / 2,
+                                                 (1 + conf) / 2))
+xbsim <- rowMeans(dadossim)
+# Gráfico
+faixay <- range(res, dadossim)
+qq0 <- qqnorm(res, main = "", xlab = "Quantis teóricos N(0,1)", pch = 20,
+              ylab = "Vendas de vinhos", ylim = faixay)
+eixox <- sort(qq0$x)
+lines(eixox, xbsim)
+lines(eixox, infsup[1,])
+lines(eixox, infsup[2,])
+
+```
+
+Com base na análise dos resíduos do modelo Arima, pode-se notar que os resíduos apresentam característica de ruído branco, isto é, os pontos de autocorrelação estão quase todos dentro da banda de confiança do gráfico de ACF e o gráfico de envelope da normal contempla grande parte dos pontos da série temporal, apenas indicando três pontos que são possíveis pontos de anomalia da série (valores discrepantes). Em outras palavras o modelo está adequado para realizar previsão.
+
+
+```{r}
+# Análise de Resíduos do modelo de espaço de Estados
+
+res <- fit_BSM$residuals
+
+# Gráfico de ACF
+
+acf(fit_BSM$residuals, main = 'Autocorrelação', xlab = 'lag')
+
+# Calculando o gráfico de envelope para distribuição normal 
+
+n <- length(res)
+xb <- mean(res) # mu
+sx <- sd(res) # sigma
+
+## 2. Gráfico QQ com envelope
+nsim <- 100 # Número de simulações
+conf <- 0.95 # Coef. de confiança
+# Dados simulados ~ normal
+dadossim <- matrix(rnorm(n * nsim, mean = xb, sd = sx), nrow = n)
+dadossim <- apply(dadossim, 2, sort)
+# Limites da banda e média
+infsup <- apply(dadossim, 1, quantile, probs = c((1 - conf) / 2,
+                                                 (1 + conf) / 2))
+xbsim <- rowMeans(dadossim)
+# Gráfico
+faixay <- range(res, dadossim)
+qq0 <- qqnorm(res, main = "", xlab = "Quantis teóricos N(0,1)", pch = 20,
+              ylab = "Vendas de vinhos", ylim = faixay)
+eixox <- sort(qq0$x)
+lines(eixox, xbsim)
+lines(eixox, infsup[1,])
+lines(eixox, infsup[2,])
+
+```
+
+De maneira similar ao modelo Arima, o modelo de Espaço de Estados, mostrou que há indícios de que os resíduos da série são um ruído branco, isto é, o modelo também é adequado para realizar previsão para o conjuto de dados de vendas de vinho.
+
+
+
+```{r}
+# Previsão dos 26 meses do conjunto de dados teste
+
+prev <-forecast(tswineindbest, 26)
+
+prev_BSM <-forecast(fit_BSM, 26)
+
+plot(1:26, test, type = 'l', xlab="Mês", ylab = "Vendas de vinho", main = "Previsão dos modelos" )
+lines(1:26, prev$mean, col =2)
+lines(1:26,prev_BSM$mean, col=3)
+legend("top",c("Teste","Arima", 'MEE'), col=1:3, lty=1, bty="n")
+```
+O modelo Arima e modelo de Espaço de Estados apresentam graficamente resultados similares em relação a aplicação da previsão para os dados de treino. Nota-se por exemplo que os modelos apresentam uma boa previsão para os dados teste, mostrando que o modelos são razoáveis para realizar previsão.
+
+```{r}
+# Gráfico de previsão considerando os dados de treino e a previsão do modelo Arima
+plot(prev)
+
+# Gráfico de previsão considerando os dados de treino e a previsão do modelo de espaço de estados
+plot(prev_BSM)
+
+```
+
+Acima temos os gráficos de previsão considerando os dois modelos, e pelo menos a forma dos gráficos apontam certa similaridade entre os modelos.
+
+```{r}
+# Tabela contendo os valores previstos pelo modelo Arima e o valor real (dados teste)
+previsao <- data.frame(prev, test, prev_BSM$mean )
+previsao <- previsao[,c(6, 1,7)]
+names(previsao) <- c('Teste', 'Arima', 'MEE')
+kable(previsao, format = "markdown")
+
+```
+
+Para melhorar a visualização dos resultados do modelo Arima e MEE foi criado uma tabela para mostra os valores de previsão e os dados testes. Nota-se que os valores estão bem próximos dos valores de teste, mostrando novamente que os modelos são úteis para esse projeto.
+
+```{r}
+# Calculando a métrica MAPE e MSE para os modelos 
+
+100*MAPE(prev$mean, test)
+100*MAPE(prev_BSM$mean, test)
+
+MSE(prev$mean, test)
+MSE(prev_BSM$mean, test)
+
+# Vejo que a porcentagem do erro médio do modelo Arima considerado aqui é de 6% e do modelo de espaço de estados é 7, em outras palavras, o MAPE estão próximos entre os valores
+
+
+```
+
+Para verficar qual modelo apresenta a melhor previsão foi utilizado duas métricas famosas, sendo elas: MAPE e MSE, deixo registrado aqui que qualquer métrica poderia ser utilizada, mas, para este problema foram essas duas. Nota-se tanto pelo MAPE quanto pelo MSE que o modelo Arima apresenta vantagem em relação ao modelo MEE. Entretanto, é importante destacar que o modelo MEE também apresenta uma razoável previsão. Portanto, para análisar os meses a previsão do modelo Arima para os meses restantes de 1994 até 1995.
+
+```{r}
+# Utilizando o modelo Arima (0,1,1)(0,1,1)12 para a produção.
+
+modelo <- arima(wineind, order = c(0,1,1), seasonal = c(0,1,1))
+
+# Realizando previsão para os próximos 16 meses 
+
+previsão <- forecast(modelo, 16)
+
+kable(previsão, format = "markdown")
+
+```
+
+O modelo Arima apresentou métricas que mostravam que seus erros de previsão em relação a venda eram menores que o modelo MEE. Dessa forma, a previsão dos 16 meses (meses restantes de 1994 e o ano completo de 1995) foram realizadas com o modelo Arima. Com base nos resultados, pode-se notar que os meses finais de 1994 apresentam mais vendas que os demais meses de 1994, situação similar ocorre em 1995, em que os meses próximos do final do ano apresentam a maior quantidade de vendas de vinhos australianos. 
+
+No que se refere ao melhor período de venda de vinho e lucro em relação a venda, com base no que foi apresentado neste projeto, os meses do final do ano são os melhores períodos de venda de vinhos, isto porque a venda tem período sazonal, ou seja, sempre aumentam no final do ano, em época de comemoração e datas especiais.
